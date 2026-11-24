@@ -520,7 +520,7 @@ export const AdminDashboardView: React.FC = () => {
                   Tải lên nhiều ảnh &amp; video cùng lúc
                 </h2>
                 <p className="mt-1 text-xs text-[#57534E]">
-                  Ảnh được tự động xóa metadata vị trí GPS; video được trích xuất thumbnail và thời lượng (tự động chuyển sang kho máy chủ nếu Storage chưa kích hoạt).
+                  Ảnh được tự động xóa metadata vị trí GPS; video được trích xuất thumbnail và thời lượng; ảnh và video được lưu an toàn trên Cloudinary.
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
