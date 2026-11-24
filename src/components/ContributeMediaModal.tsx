@@ -19,7 +19,7 @@ import {
   uploadBlobToFirebaseStorage,
 } from '../lib/mediaProcessing';
 import type { MediaType, YearCode } from '../types/memory';
-import { MAX_MEDIA_UPLOAD_BYTES } from '../utils/uploadChunking';
+import { getMaxMediaUploadBytes } from '../utils/uploadChunking';
 
 interface ContributeMediaModalProps {
   isOpen: boolean;
@@ -120,7 +120,7 @@ export const ContributeMediaModal: React.FC<ContributeMediaModalProps> = ({
 
     const nextItems: QueuedContribution[] = Array.from(files).map((file) => {
       const mediaType = detectMediaType(file);
-      const isTooLarge = file.size > MAX_MEDIA_UPLOAD_BYTES;
+      const isTooLarge = file.size > getMaxMediaUploadBytes(mediaType);
       let previewUrl: string | null = null;
       if (mediaType === 'image' && !isTooLarge) {
         previewUrl = URL.createObjectURL(file);
@@ -138,7 +138,7 @@ export const ContributeMediaModal: React.FC<ContributeMediaModalProps> = ({
         progress: 0,
         status: isTooLarge ? 'error' : 'queued',
         errorMsg: isTooLarge
-          ? `Tệp nặng ${formatFileSize(file.size)}, vượt quá giới hạn tối đa 1GB/tệp.`
+          ? `Tệp nặng ${formatFileSize(file.size)}, vượt quá giới hạn ${mediaType === 'video' ? '100 MB' : '10 MB'}/tệp.`
           : undefined,
       };
     });
