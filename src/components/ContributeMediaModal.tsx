@@ -504,7 +504,7 @@ export const ContributeMediaModal: React.FC<ContributeMediaModalProps> = ({
               Kéo thả ảnh hoặc video vào đây, hoặc bấm để chọn nhiều tệp cùng lúc
             </span>
             <span className="mt-1 text-xs text-[#57534E]">
-              Hỗ trợ JPG, PNG, WebP, HEIC, MP4, MOV, WebM (tối đa 1GB/tệp · tự động chia nhỏ khi tải lên) · Đăng hiển thị ngay lập tức
+              Hỗ trợ JPG, PNG, WebP, HEIC (tối đa 10 MB) và MP4, MOV, WebM (tối đa 100 MB) · Đăng hiển thị ngay lập tức
             </span>
             <input
               type="file"
