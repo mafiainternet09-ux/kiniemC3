@@ -1,0 +1,236 @@
+{
+  "entities": {
+    "SiteConfig": {
+      "title": "SiteConfig",
+      "description": "Global editable configuration for C3 Digital Memory website title, slogan, hero narrative, music embed, and access mode.",
+      "type": "object",
+      "properties": {
+        "siteName": { "type": "string", "minLength": 2, "maxLength": 100 },
+        "schoolName": { "type": "string", "minLength": 2, "maxLength": 100 },
+        "slogan": { "type": "string", "minLength": 2, "maxLength": 240 },
+        "heroTitle": { "type": "string", "minLength": 2, "maxLength": 160 },
+        "heroSubtitle": { "type": "string", "minLength": 2, "maxLength": 400 },
+        "introStory": { "type": "string", "minLength": 2, "maxLength": 2000 },
+        "musicTitle": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "musicArtist": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "musicYoutubeId": { "type": "string", "minLength": 5, "maxLength": 32, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "allowDemoPreview": { "type": "boolean" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "updatedBy": { "type": "string", "minLength": 1, "maxLength": 128 }
+      },
+      "required": ["siteName", "schoolName", "slogan", "heroTitle", "musicTitle", "musicArtist", "musicYoutubeId", "allowDemoPreview", "updatedAt", "updatedBy"]
+    },
+    "UserDirectoryEntry": {
+      "title": "UserDirectoryEntry",
+      "description": "Non-PII member role and seat link for authorized C3 access control.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "displayName": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "photoURL": { "type": "string", "maxLength": 500 },
+        "role": { "type": "string", "enum": ["admin", "member", "pending"] },
+        "seatNumber": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "displayName", "role", "createdAt", "updatedAt"]
+    },
+    "UserPrivateProfile": {
+      "title": "UserPrivateProfile",
+      "description": "Isolated PII profile storing email strictly accessible to owner and admin.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "email": { "type": "string", "format": "email", "maxLength": 200 },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "updatedAt"]
+    },
+    "AdminMarker": {
+      "title": "AdminMarker",
+      "description": "Trusted server-enforced admin role marker.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "grantedBy": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "grantedBy", "createdAt"]
+    },
+    "YearEvent": {
+      "title": "YearEvent",
+      "description": "Dedicated memory event or exhibition chapter inside 10A3, 11B3, or 12C3.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "yearCode": { "type": "string", "enum": ["10A3", "11B3", "12C3"] },
+        "slug": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "title": { "type": "string", "minLength": 2, "maxLength": 140 },
+        "dateLabel": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "summary": { "type": "string", "minLength": 2, "maxLength": 1200 },
+        "coverImageUrl": { "type": "string", "maxLength": 1000 },
+        "coverStoragePath": { "type": "string", "maxLength": 400 },
+        "order": { "type": "integer" },
+        "isSpecial": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "updatedBy": { "type": "string", "minLength": 1, "maxLength": 128 }
+      },
+      "required": ["id", "yearCode", "slug", "title", "dateLabel", "summary", "order", "isSpecial", "createdAt", "updatedAt", "updatedBy"]
+    },
+    "MediaItem": {
+      "title": "MediaItem",
+      "description": "Separated photo or video memory item categorized by yearCode -> eventId -> mediaType.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "yearCode": { "type": "string", "enum": ["10A3", "11B3", "12C3"] },
+        "eventId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "eventSlug": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "eventTitle": { "type": "string", "minLength": 1, "maxLength": 140 },
+        "mediaType": { "type": "string", "enum": ["image", "video"] },
+        "title": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "caption": { "type": "string", "maxLength": 800 },
+        "url": { "type": "string", "minLength": 1, "maxLength": 1500 },
+        "storagePath": { "type": "string", "maxLength": 500 },
+        "thumbnailUrl": { "type": "string", "maxLength": 1500 },
+        "thumbnailStoragePath": { "type": "string", "maxLength": 500 },
+        "durationSec": { "type": "number" },
+        "tags": { "type": "array" },
+        "featuredOnHome": { "type": "boolean" },
+        "isYearbookSpread": { "type": "boolean" },
+        "isDemo": { "type": "boolean" },
+        "status": { "type": "string", "enum": ["approved", "pending", "removed"] },
+        "uploadedBy": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "uploadedByName": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "yearCode", "eventId", "eventSlug", "eventTitle", "mediaType", "title", "url", "featuredOnHome", "isYearbookSpread", "isDemo", "status", "uploadedBy", "uploadedByName", "createdAt", "updatedAt"]
+    },
+    "ClassroomSeat": {
+      "title": "ClassroomSeat",
+      "description": "One of the 50 numbered classroom seats and member profile for C3.",
+      "type": "object",
+      "properties": {
+        "seatId": { "type": "string", "minLength": 1, "maxLength": 32, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "seatNumber": { "type": "integer" },
+        "row": { "type": "integer" },
+        "col": { "type": "integer" },
+        "memberName": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "nickname": { "type": "string", "maxLength": 80 },
+        "avatarUrl": { "type": "string", "maxLength": 1000 },
+        "avatarStoragePath": { "type": "string", "maxLength": 400 },
+        "bio": { "type": "string", "maxLength": 600 },
+        "quote": { "type": "string", "maxLength": 280 },
+        "favoriteSubject": { "type": "string", "maxLength": 80 },
+        "linkedMediaIds": { "type": "array" },
+        "isAssigned": { "type": "boolean" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "updatedBy": { "type": "string", "minLength": 1, "maxLength": 128 }
+      },
+      "required": ["seatId", "seatNumber", "row", "col", "memberName", "isAssigned", "updatedAt", "updatedBy"]
+    },
+    "GuestbookNote": {
+      "title": "GuestbookNote",
+      "description": "Yearbook guestbook message written by a C3 member.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "authorUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "authorName": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "yearTag": { "type": "string", "enum": ["10A3", "11B3", "12C3", "C3"] },
+        "message": { "type": "string", "minLength": 2, "maxLength": 600 },
+        "status": { "type": "string", "enum": ["approved", "pending"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "authorUid", "authorName", "yearTag", "message", "status", "createdAt", "updatedAt"]
+    },
+    "MediaSubmission": {
+      "title": "MediaSubmission",
+      "description": "Member-contributed photo or video awaiting admin moderation.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "yearCode": { "type": "string", "enum": ["10A3", "11B3", "12C3"] },
+        "eventId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "eventSlug": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "mediaType": { "type": "string", "enum": ["image", "video"] },
+        "title": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "caption": { "type": "string", "maxLength": 800 },
+        "url": { "type": "string", "minLength": 1, "maxLength": 1500 },
+        "storagePath": { "type": "string", "maxLength": 500 },
+        "thumbnailUrl": { "type": "string", "maxLength": 1500 },
+        "tags": { "type": "array" },
+        "submittedBy": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "submittedByName": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+        "reviewNote": { "type": "string", "maxLength": 300 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "yearCode", "eventId", "eventSlug", "mediaType", "title", "url", "submittedBy", "submittedByName", "status", "createdAt", "updatedAt"]
+    },
+    "RemovalRequest": {
+      "title": "RemovalRequest",
+      "description": "Member privacy request to remove or hide a specific media item.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "mediaId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "mediaTitle": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "reason": { "type": "string", "minLength": 4, "maxLength": 600 },
+        "requestedBy": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "requestedByName": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "status": { "type": "string", "enum": ["pending", "resolved", "dismissed"] },
+        "adminNote": { "type": "string", "maxLength": 300 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "mediaId", "mediaTitle", "reason", "requestedBy", "requestedByName", "status", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/siteConfig/{configId}": {
+      "schema": { "$ref": "#/entities/SiteConfig" },
+      "description": "Global site metadata, title, slogan, and official theme song configuration."
+    },
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserDirectoryEntry" },
+      "description": "Authorized member role directory without PII."
+    },
+    "/users/{userId}/private/{docId}": {
+      "schema": { "$ref": "#/entities/UserPrivateProfile" },
+      "description": "Isolated PII profile storing user email strictly for owner and admins."
+    },
+    "/admins/{userId}": {
+      "schema": { "$ref": "#/entities/AdminMarker" },
+      "description": "Server-validated admin role lookup documents."
+    },
+    "/events/{eventId}": {
+      "schema": { "$ref": "#/entities/YearEvent" },
+      "description": "15 structured school events across 10A3, 11B3, and 12C3."
+    },
+    "/media/{mediaId}": {
+      "schema": { "$ref": "#/entities/MediaItem" },
+      "description": "Separated photo and video archival entries."
+    },
+    "/seats/{seatId}": {
+      "schema": { "$ref": "#/entities/ClassroomSeat" },
+      "description": "50 classroom seat assignments and member cards."
+    },
+    "/guestbook/{entryId}": {
+      "schema": { "$ref": "#/entities/GuestbookNote" },
+      "description": "Member guestbook notes and farewell messages."
+    },
+    "/submissions/{submissionId}": {
+      "schema": { "$ref": "#/entities/MediaSubmission" },
+      "description": "Pending member photo/video contributions for admin review."
+    },
+    "/removalRequests/{requestId}": {
+      "schema": { "$ref": "#/entities/RemovalRequest" },
+      "description": "Privacy takedown requests submitted by members."
+    }
+  }
+}

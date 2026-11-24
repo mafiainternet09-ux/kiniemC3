@@ -1,0 +1,6 @@
+{
+  "name": "C3 – Digital Memory (THPT Bình Sơn)",
+  "description": "Không gian lưu giữ kỷ niệm ba năm thanh xuân 10A3 – 11B3 – 12C3 của tập thể 50 thành viên lớp C3, Trường THPT Bình Sơn.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

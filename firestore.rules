@@ -1,0 +1,491 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Default-deny global safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // ---------------------------------------------------------
+    // Core Identity & Validation Primitives
+    // ---------------------------------------------------------
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isEmailVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isBootstrappedAdmin() {
+      return isEmailVerified() && request.auth.token.email == 'mafiainternet09@gmail.com';
+    }
+
+    function isAdmin() {
+      return isBootstrappedAdmin() || (
+        isEmailVerified() && exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    function isMember() {
+      return isAdmin() || (
+        isEmailVerified() &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['member', 'admin']
+      );
+    }
+
+    function isValidString(val, minLen, maxLen) {
+      return val is string && val.size() >= minLen && val.size() <= maxLen;
+    }
+
+    function isValidTagList(listVal, maxItems) {
+      return listVal is list && listVal.size() <= maxItems && (
+        listVal.size() == 0 || (listVal[0] is string && listVal[0].size() <= 64)
+      );
+    }
+
+    // ---------------------------------------------------------
+    // Entity Validation Blueprints
+    // ---------------------------------------------------------
+    function isValidSiteConfig(data) {
+      return data.keys().hasAll([
+        'siteName', 'schoolName', 'slogan', 'heroTitle',
+        'musicTitle', 'musicArtist', 'musicYoutubeId',
+        'allowDemoPreview', 'updatedAt', 'updatedBy'
+      ]) &&
+      data.keys().hasOnly([
+        'siteName', 'schoolName', 'slogan', 'heroTitle', 'heroSubtitle',
+        'introStory', 'musicTitle', 'musicArtist', 'musicYoutubeId',
+        'allowDemoPreview', 'updatedAt', 'updatedBy'
+      ]) &&
+      isValidString(data.siteName, 2, 100) &&
+      isValidString(data.schoolName, 2, 100) &&
+      isValidString(data.slogan, 2, 240) &&
+      isValidString(data.heroTitle, 2, 160) &&
+      (!('heroSubtitle' in data) || isValidString(data.heroSubtitle, 0, 400)) &&
+      (!('introStory' in data) || isValidString(data.introStory, 0, 2000)) &&
+      isValidString(data.musicTitle, 1, 120) &&
+      isValidString(data.musicArtist, 1, 120) &&
+      isValidString(data.musicYoutubeId, 5, 32) &&
+      data.musicYoutubeId.matches('^[a-zA-Z0-9_\\-]+$') &&
+      data.allowDemoPreview is bool &&
+      data.updatedAt is timestamp &&
+      isValidString(data.updatedBy, 1, 128);
+    }
+
+    function isValidUserDirectory(data) {
+      return data.keys().hasAll(['uid', 'displayName', 'role', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['uid', 'displayName', 'photoURL', 'role', 'seatNumber', 'createdAt', 'updatedAt']) &&
+        isValidId(data.uid) &&
+        isValidString(data.displayName, 1, 100) &&
+        (!('photoURL' in data) || isValidString(data.photoURL, 0, 500)) &&
+        data.role in ['admin', 'member', 'pending'] &&
+        (!('seatNumber' in data) || (data.seatNumber is int && data.seatNumber >= 1 && data.seatNumber <= 50)) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidPrivateProfile(data) {
+      return data.keys().hasAll(['uid', 'email', 'updatedAt']) &&
+        data.keys().hasOnly(['uid', 'email', 'updatedAt']) &&
+        isValidId(data.uid) &&
+        isValidString(data.email, 3, 200) &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidAdminMarker(data) {
+      return data.keys().hasAll(['uid', 'grantedBy', 'createdAt']) &&
+        data.keys().hasOnly(['uid', 'grantedBy', 'createdAt']) &&
+        isValidId(data.uid) &&
+        isValidString(data.grantedBy, 1, 128) &&
+        data.createdAt is timestamp;
+    }
+
+    function isValidEvent(data) {
+      return data.keys().hasAll([
+        'id', 'yearCode', 'slug', 'title', 'dateLabel',
+        'summary', 'order', 'isSpecial', 'createdAt', 'updatedAt', 'updatedBy'
+      ]) &&
+      data.keys().hasOnly([
+        'id', 'yearCode', 'slug', 'title', 'dateLabel', 'summary',
+        'coverImageUrl', 'coverStoragePath', 'order', 'isSpecial',
+        'createdAt', 'updatedAt', 'updatedBy'
+      ]) &&
+      isValidId(data.id) &&
+      data.yearCode in ['10A3', '11B3', '12C3'] &&
+      isValidId(data.slug) &&
+      isValidString(data.title, 2, 140) &&
+      isValidString(data.dateLabel, 1, 80) &&
+      isValidString(data.summary, 2, 1200) &&
+      (!('coverImageUrl' in data) || isValidString(data.coverImageUrl, 0, 1000)) &&
+      (!('coverStoragePath' in data) || isValidString(data.coverStoragePath, 0, 400)) &&
+      data.order is int && data.order >= 0 && data.order <= 100 &&
+      data.isSpecial is bool &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp &&
+      isValidString(data.updatedBy, 1, 128);
+    }
+
+    function isValidMedia(data) {
+      return data.keys().hasAll([
+        'id', 'yearCode', 'eventId', 'eventSlug', 'eventTitle',
+        'mediaType', 'title', 'url', 'featuredOnHome',
+        'isYearbookSpread', 'isDemo', 'status', 'uploadedBy',
+        'uploadedByName', 'createdAt', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'id', 'yearCode', 'eventId', 'eventSlug', 'eventTitle',
+        'mediaType', 'title', 'caption', 'url', 'storagePath',
+        'thumbnailUrl', 'thumbnailStoragePath', 'durationSec', 'tags',
+        'featuredOnHome', 'isYearbookSpread', 'isDemo', 'status',
+        'uploadedBy', 'uploadedByName', 'createdAt', 'updatedAt'
+      ]) &&
+      isValidId(data.id) &&
+      data.yearCode in ['10A3', '11B3', '12C3'] &&
+      isValidId(data.eventId) &&
+      isValidString(data.eventSlug, 1, 64) &&
+      isValidString(data.eventTitle, 1, 140) &&
+      data.mediaType in ['image', 'video'] &&
+      isValidString(data.title, 1, 160) &&
+      (!('caption' in data) || isValidString(data.caption, 0, 800)) &&
+      isValidString(data.url, 1, 1500) &&
+      (!('storagePath' in data) || isValidString(data.storagePath, 0, 500)) &&
+      (!('thumbnailUrl' in data) || isValidString(data.thumbnailUrl, 0, 1500)) &&
+      (!('thumbnailStoragePath' in data) || isValidString(data.thumbnailStoragePath, 0, 500)) &&
+      (!('durationSec' in data) || (data.durationSec is number && data.durationSec >= 0)) &&
+      (!('tags' in data) || isValidTagList(data.tags, 10)) &&
+      data.featuredOnHome is bool &&
+      data.isYearbookSpread is bool &&
+      data.isDemo is bool &&
+      data.status in ['approved', 'pending', 'removed'] &&
+      isValidString(data.uploadedBy, 1, 128) &&
+      isValidString(data.uploadedByName, 1, 100) &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    function isValidSeat(data) {
+      return data.keys().hasAll([
+        'seatId', 'seatNumber', 'row', 'col',
+        'memberName', 'isAssigned', 'updatedAt', 'updatedBy'
+      ]) &&
+      data.keys().hasOnly([
+        'seatId', 'seatNumber', 'row', 'col', 'memberName',
+        'nickname', 'avatarUrl', 'avatarStoragePath', 'bio',
+        'quote', 'favoriteSubject', 'linkedMediaIds',
+        'isAssigned', 'updatedAt', 'updatedBy'
+      ]) &&
+      isValidId(data.seatId) &&
+      data.seatNumber is int && data.seatNumber >= 1 && data.seatNumber <= 50 &&
+      data.row is int && data.row >= 1 && data.row <= 10 &&
+      data.col is int && data.col >= 1 && data.col <= 10 &&
+      isValidString(data.memberName, 1, 100) &&
+      (!('nickname' in data) || isValidString(data.nickname, 0, 80)) &&
+      (!('avatarUrl' in data) || isValidString(data.avatarUrl, 0, 1000)) &&
+      (!('avatarStoragePath' in data) || isValidString(data.avatarStoragePath, 0, 400)) &&
+      (!('bio' in data) || isValidString(data.bio, 0, 600)) &&
+      (!('quote' in data) || isValidString(data.quote, 0, 280)) &&
+      (!('favoriteSubject' in data) || isValidString(data.favoriteSubject, 0, 80)) &&
+      (!('linkedMediaIds' in data) || isValidTagList(data.linkedMediaIds, 12)) &&
+      data.isAssigned is bool &&
+      data.updatedAt is timestamp &&
+      isValidString(data.updatedBy, 1, 128);
+    }
+
+    function isValidGuestbook(data) {
+      return data.keys().hasAll([
+        'id', 'authorUid', 'authorName', 'yearTag',
+        'message', 'status', 'createdAt', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'id', 'authorUid', 'authorName', 'yearTag',
+        'message', 'status', 'createdAt', 'updatedAt'
+      ]) &&
+      isValidId(data.id) &&
+      isValidId(data.authorUid) &&
+      isValidString(data.authorName, 1, 100) &&
+      data.yearTag in ['10A3', '11B3', '12C3', 'C3'] &&
+      isValidString(data.message, 2, 600) &&
+      data.status in ['approved', 'pending'] &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    function isValidSubmission(data) {
+      return data.keys().hasAll([
+        'id', 'yearCode', 'eventId', 'eventSlug', 'mediaType',
+        'title', 'url', 'submittedBy', 'submittedByName',
+        'status', 'createdAt', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'id', 'yearCode', 'eventId', 'eventSlug', 'mediaType',
+        'title', 'caption', 'url', 'storagePath', 'thumbnailUrl',
+        'tags', 'submittedBy', 'submittedByName', 'status',
+        'reviewNote', 'createdAt', 'updatedAt'
+      ]) &&
+      isValidId(data.id) &&
+      data.yearCode in ['10A3', '11B3', '12C3'] &&
+      isValidId(data.eventId) &&
+      isValidString(data.eventSlug, 1, 64) &&
+      data.mediaType in ['image', 'video'] &&
+      isValidString(data.title, 1, 160) &&
+      (!('caption' in data) || isValidString(data.caption, 0, 800)) &&
+      isValidString(data.url, 1, 1500) &&
+      (!('storagePath' in data) || isValidString(data.storagePath, 0, 500)) &&
+      (!('thumbnailUrl' in data) || isValidString(data.thumbnailUrl, 0, 1500)) &&
+      (!('tags' in data) || isValidTagList(data.tags, 10)) &&
+      isValidId(data.submittedBy) &&
+      isValidString(data.submittedByName, 1, 100) &&
+      data.status in ['pending', 'approved', 'rejected'] &&
+      (!('reviewNote' in data) || isValidString(data.reviewNote, 0, 300)) &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    function isValidRemovalRequest(data) {
+      return data.keys().hasAll([
+        'id', 'mediaId', 'mediaTitle', 'reason',
+        'requestedBy', 'requestedByName', 'status',
+        'createdAt', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'id', 'mediaId', 'mediaTitle', 'reason',
+        'requestedBy', 'requestedByName', 'status',
+        'adminNote', 'createdAt', 'updatedAt'
+      ]) &&
+      isValidId(data.id) &&
+      isValidId(data.mediaId) &&
+      isValidString(data.mediaTitle, 1, 160) &&
+      isValidString(data.reason, 4, 600) &&
+      isValidId(data.requestedBy) &&
+      isValidString(data.requestedByName, 1, 100) &&
+      data.status in ['pending', 'resolved', 'dismissed'] &&
+      (!('adminNote' in data) || isValidString(data.adminNote, 0, 300)) &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    // ---------------------------------------------------------
+    // Collection Rules
+    // ---------------------------------------------------------
+    match /siteConfig/{configId} {
+      allow get: if isValidId(configId);
+      allow list: if false;
+      allow create, update: if isValidId(configId) && isAdmin() && isValidSiteConfig(incoming()) && incoming().updatedAt == request.time;
+      allow delete: if false;
+    }
+
+    match /admins/{userId} {
+      allow get: if isValidId(userId) && (isOwner(userId) || isAdmin());
+      allow list: if isAdmin();
+      allow create: if isValidId(userId) && isAdmin() && isValidAdminMarker(incoming()) && incoming().uid == userId && incoming().createdAt == request.time;
+      allow update: if false;
+      allow delete: if isValidId(userId) && isAdmin() && userId != request.auth.uid;
+    }
+
+    match /users/{userId} {
+      allow get: if isValidId(userId) && (isOwner(userId) || isAdmin());
+      allow list: if isAdmin();
+      allow create: if isValidId(userId) &&
+        isEmailVerified() &&
+        isValidUserDirectory(incoming()) &&
+        incoming().uid == userId &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        (
+          (isOwner(userId) && (incoming().role == 'pending' || (isBootstrappedAdmin() && incoming().role == 'admin'))) ||
+          isAdmin()
+        );
+      allow update: if isValidId(userId) &&
+        isValidUserDirectory(incoming()) &&
+        incoming().uid == existing().uid &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (
+          isAdmin() ||
+          (
+            isOwner(userId) &&
+            isEmailVerified() &&
+            incoming().role == existing().role &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoURL', 'updatedAt'])
+          )
+        );
+      allow delete: if isValidId(userId) && isAdmin();
+
+      match /private/{docId} {
+        allow get: if isValidId(userId) && isValidId(docId) && (isOwner(userId) || isAdmin());
+        allow list: if false;
+        allow create, update: if isValidId(userId) && isValidId(docId) &&
+          (isOwner(userId) || isAdmin()) &&
+          isEmailVerified() &&
+          isValidPrivateProfile(incoming()) &&
+          incoming().uid == userId &&
+          incoming().updatedAt == request.time;
+        allow delete: if isValidId(userId) && isValidId(docId) && isAdmin();
+      }
+    }
+
+    match /events/{eventId} {
+      allow get: if isValidId(eventId) && isMember();
+      allow list: if isAdmin() || (isMember() && resource.data.yearCode in ['10A3', '11B3', '12C3']);
+      allow create: if isValidId(eventId) &&
+        isAdmin() &&
+        isValidEvent(incoming()) &&
+        incoming().id == eventId &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(eventId) &&
+        isAdmin() &&
+        isValidEvent(incoming()) &&
+        incoming().id == existing().id &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time;
+      allow delete: if isValidId(eventId) && isAdmin();
+    }
+
+    match /media/{mediaId} {
+      allow get: if isValidId(mediaId) && (isAdmin() || (isMember() && existing().status == 'approved'));
+      allow list: if isAdmin() || (isMember() && resource.data.status == 'approved');
+      allow create: if isValidId(mediaId) &&
+        isMember() &&
+        isValidMedia(incoming()) &&
+        incoming().id == mediaId &&
+        (
+          exists(/databases/$(database)/documents/events/$(incoming().eventId)) ||
+          incoming().eventId in [
+            '10a3-20-10', '10a3-19-11', '10a3-20-11', '10a3-08-03', '10a3-hoi-trai', '10a3-ky-niem-khac',
+            '11b3-20-10', '11b3-19-11', '11b3-20-11', '11b3-08-03', '11b3-ky-niem-khac',
+            '12c3-20-10', '12c3-19-11', '12c3-20-11', '12c3-08-03', '12c3-hoi-trai', '12c3-ky-yeu', '12c3-ky-niem-khac'
+          ]
+        ) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        (
+          isAdmin() ||
+          (
+            incoming().uploadedBy == request.auth.uid &&
+            incoming().status == 'approved' &&
+            incoming().isDemo == false &&
+            incoming().featuredOnHome == false
+          )
+        );
+      allow update: if isValidId(mediaId) &&
+        isAdmin() &&
+        isValidMedia(incoming()) &&
+        incoming().id == existing().id &&
+        incoming().uploadedBy == existing().uploadedBy &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time;
+      allow delete: if isValidId(mediaId) && (isAdmin() || (isMember() && existing().uploadedBy == request.auth.uid));
+    }
+
+    match /seats/{seatId} {
+      allow get: if isValidId(seatId) && isMember();
+      allow list: if isAdmin() || (isMember() && resource.data.seatNumber >= 1 && resource.data.seatNumber <= 50);
+      allow create: if isValidId(seatId) &&
+        isAdmin() &&
+        isValidSeat(incoming()) &&
+        incoming().seatId == seatId &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(seatId) &&
+        isAdmin() &&
+        isValidSeat(incoming()) &&
+        incoming().seatId == existing().seatId &&
+        incoming().seatNumber == existing().seatNumber &&
+        incoming().updatedAt == request.time;
+      allow delete: if isValidId(seatId) && isAdmin();
+    }
+
+    match /guestbook/{entryId} {
+      allow get: if isValidId(entryId) && (isAdmin() || (isMember() && existing().status == 'approved'));
+      allow list: if isAdmin() || (isMember() && resource.data.status == 'approved');
+      allow create: if isValidId(entryId) &&
+        isMember() &&
+        isValidGuestbook(incoming()) &&
+        incoming().id == entryId &&
+        incoming().authorUid == request.auth.uid &&
+        incoming().status == 'approved' &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(entryId) &&
+        isValidGuestbook(incoming()) &&
+        incoming().id == existing().id &&
+        incoming().authorUid == existing().authorUid &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (
+          isAdmin() ||
+          (
+            isMember() &&
+            existing().authorUid == request.auth.uid &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['message', 'yearTag', 'updatedAt'])
+          )
+        );
+      allow delete: if isValidId(entryId) && (isAdmin() || (isMember() && existing().authorUid == request.auth.uid));
+    }
+
+    match /submissions/{submissionId} {
+      allow get: if isValidId(submissionId) && (isAdmin() || (isMember() && existing().submittedBy == request.auth.uid));
+      allow list: if isAdmin() || (isMember() && resource.data.submittedBy == request.auth.uid);
+      allow create: if isValidId(submissionId) &&
+        isMember() &&
+        isValidSubmission(incoming()) &&
+        incoming().id == submissionId &&
+        incoming().submittedBy == request.auth.uid &&
+        incoming().status == 'pending' &&
+        exists(/databases/$(database)/documents/events/$(incoming().eventId)) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(submissionId) &&
+        isAdmin() &&
+        isValidSubmission(incoming()) &&
+        incoming().id == existing().id &&
+        incoming().submittedBy == existing().submittedBy &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (existing().status == 'pending' || isAdmin());
+      allow delete: if isValidId(submissionId) && (isAdmin() || (isMember() && existing().submittedBy == request.auth.uid && existing().status == 'pending'));
+    }
+
+    match /removalRequests/{requestId} {
+      allow get: if isValidId(requestId) && (isAdmin() || (isMember() && existing().requestedBy == request.auth.uid));
+      allow list: if isAdmin() || (isMember() && resource.data.requestedBy == request.auth.uid);
+      allow create: if isValidId(requestId) &&
+        isMember() &&
+        isValidRemovalRequest(incoming()) &&
+        incoming().id == requestId &&
+        incoming().requestedBy == request.auth.uid &&
+        incoming().status == 'pending' &&
+        exists(/databases/$(database)/documents/media/$(incoming().mediaId)) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(requestId) &&
+        isAdmin() &&
+        isValidRemovalRequest(incoming()) &&
+        incoming().id == existing().id &&
+        incoming().requestedBy == existing().requestedBy &&
+        incoming().mediaId == existing().mediaId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time;
+      allow delete: if isValidId(requestId) && isAdmin();
+    }
+  }
+}
