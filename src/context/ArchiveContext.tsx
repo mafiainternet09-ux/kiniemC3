@@ -713,7 +713,35 @@ export const ArchiveProvider: React.FC<{ children: React.ReactNode }> = ({ child
         throw new Error('Bạn cần đăng nhập tài khoản thành viên C3 được duyệt để xóa tư liệu.');
       }
       try {
-        await deleteDoc(doc(db, 'media', mediaId));
+        const mediaRef = doc(db, 'media', mediaId);
+        const mediaSnap = await getDoc(mediaRef);
+        const mediaData = mediaSnap.exists() ? mediaSnap.data() : null;
+        const isCloudinaryAsset =
+          typeof mediaData?.storagePath === 'string' &&
+          mediaData.storagePath.startsWith('cloudinary:');
+
+        if (isCloudinaryAsset) {
+          const token = await user.getIdToken();
+          const response = await fetch('/api/media/delete', {
+            method: 'POST',
+            headers: {
+              Authorization: 'Bearer ' + token,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ mediaId }),
+          });
+          let result: { error?: string } = {};
+          try {
+            result = (await response.json()) as { error?: string };
+          } catch {
+            // Keep the document if the storage deletion could not be confirmed.
+          }
+          if (!response.ok) {
+            throw new Error(result.error || 'Không thể xóa tệp khỏi Cloudinary.');
+          }
+        }
+
+        await deleteDoc(mediaRef);
         setFirestoreError(null);
       } catch (err) {
         setFirestoreError(formatFirestoreErrorForUi(err));
