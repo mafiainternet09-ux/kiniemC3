@@ -24,7 +24,7 @@ import {
   stripImageExifGps,
   uploadBlobToFirebaseStorage,
 } from '../lib/mediaProcessing';
-import { MAX_MEDIA_UPLOAD_BYTES } from '../utils/uploadChunking';
+import { getMaxMediaUploadBytes } from '../utils/uploadChunking';
 import type { MediaItem, MediaType, YearCode, YearEvent } from '../types/memory';
 import { formatDateDDMMYYYY, formatDuration, sanitizeFirestoreId } from '../utils/memorySearch';
 import { ArchivalMediaFrame } from './ArchivalMediaFrame';
@@ -224,7 +224,7 @@ export const AdminDashboardView: React.FC = () => {
     const items: UploadQueueItem[] = Array.from(files).map((file) => {
       const mediaType = detectMediaType(file);
       const baseTitle = file.name.replace(/\.[^/.]+$/, '').replace(/[_-]+/g, ' ');
-      const isTooLarge = file.size > MAX_MEDIA_UPLOAD_BYTES;
+      const isTooLarge = file.size > getMaxMediaUploadBytes(mediaType);
       return {
         localId: `q-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
         file,
@@ -239,7 +239,7 @@ export const AdminDashboardView: React.FC = () => {
         progress: 0,
         status: isTooLarge ? 'error' : 'queued',
         errorMsg: isTooLarge
-          ? `Tệp nặng ${formatFileSize(file.size)}, vượt quá giới hạn tối đa 1GB/tệp.`
+          ? `Tệp nặng ${formatFileSize(file.size)}, vượt quá giới hạn ${mediaType === 'video' ? '100 MB' : '10 MB'}/tệp.`
           : undefined,
       };
     });
