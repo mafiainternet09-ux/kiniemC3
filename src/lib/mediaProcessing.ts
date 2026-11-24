@@ -1,12 +1,6 @@
-import { getDownloadURL, ref, uploadBytesResumable } from 'firebase/storage';
-import { auth, storage } from './firebase';
+import { auth } from './firebase';
 import type { MediaType } from '../types/memory';
-import {
-  buildUploadChunkPlan,
-  calculateChunkedProgressPercent,
-  sanitizeUploadSessionId,
-  UPLOAD_CHUNK_BYTES,
-} from '../utils/uploadChunking';
+import { getMaxMediaUploadBytes } from '../utils/uploadChunking';
 
 export function detectMediaType(file: File): MediaType {
   if (file.type.startsWith('video/')) return 'video';
@@ -165,277 +159,146 @@ export async function fileToBase64(blob: Blob): Promise<string> {
   });
 }
 
-function sendSingleXhrUpload(
-  endpoint: string,
-  payload: Blob,
-  headers: Record<string, string>,
-  onLoadProgress: (loadedBytes: number) => void
-): Promise<{ status: number; responseText: string }> {
+interface CloudinaryUploadSignature {
+  cloudName: string;
+  apiKey: string;
+  timestamp: number;
+  signature: string;
+  publicId: string;
+  resourceType: 'image' | 'video';
+}
+
+async function requestCloudinaryUploadSignature(
+  yearCode: string,
+  mediaCategory: 'image' | 'video' | 'thumbnail',
+  fileName: string
+): Promise<CloudinaryUploadSignature> {
+  const token = await auth.currentUser?.getIdToken();
+  if (!token) {
+    throw new Error('Vui lòng đăng nhập lại bằng tài khoản Google C3 để tải tệp lên.');
+  }
+
+  const response = await fetch('/api/media/sign-upload', {
+    method: 'POST',
+    headers: {
+      Authorization: 'Bearer ' + token,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ yearCode, mediaCategory, fileName }),
+  });
+
+  let data: (CloudinaryUploadSignature & { error?: string }) | null = null;
+  try {
+    data = (await response.json()) as CloudinaryUploadSignature & { error?: string };
+  } catch {
+    // Handled below with a safe fallback message.
+  }
+
+  if (!response.ok || !data?.signature || !data?.publicId || !data?.cloudName || !data?.apiKey) {
+    throw new Error(data?.error || ('Không thể xác thực tải lên (' + response.status + ').'));
+  }
+  return data;
+}
+
+function uploadDirectlyToCloudinary(
+  signed: CloudinaryUploadSignature,
+  blob: Blob,
+  fileName: string,
+  onProgress: (percent: number) => void
+): Promise<{ url: string; storagePath: string }> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
-    xhr.open('POST', endpoint, true);
-    Object.entries(headers).forEach(([key, val]) => {
-      xhr.setRequestHeader(key, val);
-    });
+    const formData = new FormData();
 
-    xhr.upload.onprogress = (evt) => {
-      if (evt.lengthComputable) {
-        onLoadProgress(evt.loaded);
+    formData.append('file', blob, fileName);
+    formData.append('api_key', signed.apiKey);
+    formData.append('timestamp', String(signed.timestamp));
+    formData.append('public_id', signed.publicId);
+    formData.append('overwrite', 'false');
+    formData.append('signature', signed.signature);
+
+    xhr.open(
+      'POST',
+      'https://api.cloudinary.com/v1_1/' +
+        encodeURIComponent(signed.cloudName) +
+        '/' +
+        signed.resourceType +
+        '/upload',
+      true
+    );
+    xhr.timeout = 10 * 60 * 1000;
+
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable && event.total > 0) {
+        onProgress(Math.min(99, Math.max(1, Math.round((event.loaded / event.total) * 99))));
       }
     };
 
     xhr.onload = () => {
-      resolve({ status: xhr.status, responseText: xhr.responseText });
+      let result: {
+        secure_url?: string;
+        public_id?: string;
+        error?: { message?: string };
+      } = {};
+      try {
+        result = JSON.parse(xhr.responseText) as typeof result;
+      } catch {
+        reject(new Error('Cloudinary trả về dữ liệu không hợp lệ.'));
+        return;
+      }
+
+      if (xhr.status < 200 || xhr.status >= 300 || !result.secure_url || !result.public_id) {
+        reject(
+          new Error(
+            result.error?.message ||
+              ('Cloudinary không thể nhận tệp này (mã ' + xhr.status + '). Vui lòng thử lại.')
+          )
+        );
+        return;
+      }
+
+      onProgress(100);
+      resolve({
+        url: result.secure_url,
+        storagePath: 'cloudinary:' + signed.resourceType + ':' + result.public_id,
+      });
     };
 
-    xhr.onerror = () => reject(new Error('Không thể kết nối máy chủ để tải tệp lên.'));
-    xhr.send(payload);
-  });
-}
-
-async function uploadBlobToAppServer(
-  blob: Blob,
-  yearCode: string,
-  mediaCategory: 'image' | 'video' | 'thumbnail',
-  fileName: string,
-  contentType: string,
-  onProgress: (percent: number) => void
-): Promise<{ url: string; storagePath: string }> {
-  const initialToken = await auth.currentUser?.getIdToken();
-  if (!initialToken) {
-    throw new Error('Vui lòng đăng nhập lại bằng tài khoản Google C3 để tải tệp lên.');
-  }
-
-  if (blob.size <= UPLOAD_CHUNK_BYTES) {
-    const { status, responseText } = await sendSingleXhrUpload(
-      '/api/media/upload',
-      blob,
-      {
-        Authorization: `Bearer ${initialToken}`,
-        'Content-Type': contentType || 'application/octet-stream',
-        'X-Year-Code': yearCode,
-        'X-Media-Type': mediaCategory,
-        'X-File-Name': encodeURIComponent(fileName),
-      },
-      (loaded) => {
-        if (blob.size > 0) {
-          onProgress(Math.min(99, Math.round((loaded / blob.size) * 100)));
-        }
-      }
-    );
-
-    if (status >= 200 && status < 300) {
-      try {
-        const parsed = JSON.parse(responseText) as { url: string; storagePath: string };
-        onProgress(100);
-        return parsed;
-      } catch {
-        throw new Error('Phản hồi máy chủ không hợp lệ.');
-      }
-    }
-
-    let msg = `Lỗi máy chủ (${status})`;
-    try {
-      const errJson = JSON.parse(responseText) as { error?: string };
-      if (errJson.error) msg = errJson.error;
-    } catch {
-      // ignore
-    }
-    throw new Error(msg);
-  }
-
-  const chunkPlan = buildUploadChunkPlan(blob.size, UPLOAD_CHUNK_BYTES);
-  const uploadId = sanitizeUploadSessionId(
-    `up_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
-  );
-  let activeToken = initialToken;
-
-  for (const part of chunkPlan) {
-    // Refresh Firebase ID token periodically on very large uploads
-    if (part.chunkIndex > 0 && part.chunkIndex % 40 === 0 && auth.currentUser) {
-      activeToken = await auth.currentUser.getIdToken(true);
-    }
-
-    const sliceBlob = blob.slice(part.start, part.end);
-    let lastErr: Error | null = null;
-
-    for (let attempt = 0; attempt < 3; attempt++) {
-      try {
-        const { status, responseText } = await sendSingleXhrUpload(
-          '/api/media/upload/chunk',
-          sliceBlob,
-          {
-            Authorization: `Bearer ${activeToken}`,
-            'Content-Type': 'application/octet-stream',
-            'X-Upload-Id': uploadId,
-            'X-Chunk-Index': String(part.chunkIndex),
-            'X-Total-Chunks': String(chunkPlan.length),
-            'X-Chunk-Size': String(UPLOAD_CHUNK_BYTES),
-            'X-Year-Code': yearCode,
-            'X-Media-Type': mediaCategory,
-            'X-File-Name': encodeURIComponent(fileName),
-          },
-          (loadedInChunk) => {
-            onProgress(
-              calculateChunkedProgressPercent(
-                part.chunkIndex,
-                loadedInChunk,
-                chunkPlan.length,
-                blob.size,
-                UPLOAD_CHUNK_BYTES
-              )
-            );
-          }
-        );
-
-        if (status === 401 && attempt === 0 && auth.currentUser) {
-          activeToken = await auth.currentUser.getIdToken(true);
-          continue;
-        }
-
-        if (status >= 200 && status < 300) {
-          if (part.chunkIndex === chunkPlan.length - 1) {
-            const parsed = JSON.parse(responseText) as { url: string; storagePath: string };
-            onProgress(100);
-            return parsed;
-          }
-          lastErr = null;
-          break;
-        }
-
-        let errMsg = `Lỗi máy chủ (${status})`;
-        try {
-          const errJson = JSON.parse(responseText) as { error?: string };
-          if (errJson.error) errMsg = errJson.error;
-        } catch {
-          // ignore
-        }
-        const err = new Error(errMsg);
-        if (status >= 500 && status !== 507 && attempt < 2) {
-          lastErr = err;
-          await new Promise((r) => setTimeout(r, 600 * (attempt + 1)));
-          continue;
-        }
-        throw err;
-      } catch (err) {
-        lastErr = err instanceof Error ? err : new Error('Lỗi kết nối khi tải mảnh tệp.');
-        if (attempt < 2) {
-          await new Promise((r) => setTimeout(r, 600 * (attempt + 1)));
-          continue;
-        }
-        throw lastErr;
-      }
-    }
-
-    if (lastErr) throw lastErr;
-  }
-
-  throw new Error('Không thể hoàn tất phiên tải lên phân mảnh.');
-}
-
-let cachedFirebaseStorageAvailable: boolean | null = null;
-
-async function isFirebaseStorageAvailable(): Promise<boolean> {
-  if (cachedFirebaseStorageAvailable !== null) {
-    return cachedFirebaseStorageAvailable;
-  }
-  try {
-    const res = await fetch('/api/health', { cache: 'no-store' });
-    if (res.ok) {
-      const data = (await res.json()) as { storageBucketAvailable?: boolean };
-      if (typeof data.storageBucketAvailable === 'boolean') {
-        cachedFirebaseStorageAvailable = data.storageBucketAvailable;
-        return cachedFirebaseStorageAvailable;
-      }
-    }
-  } catch {
-    // ignore health probe error and fall back to runtime check
-  }
-  return true;
-}
-
-function tryUploadToFirebaseStorage(
-  blob: Blob,
-  storagePath: string,
-  contentType: string,
-  onProgress: (percent: number) => void
-): Promise<{ url: string; storagePath: string }> {
-  const storageRef = ref(storage, storagePath);
-  return new Promise((resolve, reject) => {
-    const task = uploadBytesResumable(storageRef, blob, { contentType });
-    let lastBytes = 0;
-    let finished = false;
-
-    // Abort quickly if Firebase Storage stalls at 0 bytes (e.g. Storage bucket not enabled or CORS blocked)
-    const stallTimer = setTimeout(() => {
-      if (!finished && lastBytes === 0) {
-        finished = true;
-        try {
-          task.cancel();
-        } catch {
-          // ignore
-        }
-        reject(new Error('storage/stall-timeout'));
-      }
-    }, 2500);
-
-    task.on(
-      'state_changed',
-      (snapshot) => {
-        if (snapshot.bytesTransferred > 0) {
-          lastBytes = snapshot.bytesTransferred;
-        }
-        const pct = snapshot.totalBytes
-          ? Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100)
-          : 0;
-        onProgress(pct);
-      },
-      (error) => {
-        if (finished) return;
-        finished = true;
-        clearTimeout(stallTimer);
-        reject(error);
-      },
-      async () => {
-        if (finished) return;
-        finished = true;
-        clearTimeout(stallTimer);
-        try {
-          const url = await getDownloadURL(task.snapshot.ref);
-          resolve({ url, storagePath });
-        } catch (err) {
-          reject(err);
-        }
-      }
-    );
+    xhr.onerror = () => reject(new Error('Mất kết nối khi tải tệp lên Cloudinary. Vui lòng thử lại.'));
+    xhr.ontimeout = () => reject(new Error('Tải lên quá thời gian chờ. Vui lòng thử lại với mạng ổn định hơn.'));
+    xhr.send(formData);
   });
 }
 
 /**
- * Uploads media to Firebase Storage when its bucket is provisioned; otherwise uploads directly
- * through the authenticated Express /api/media/upload storage route without 404/CORS stalls.
+ * Uploads a media blob directly from the browser to Cloudinary.
+ * A Vercel API function signs the request after verifying the Firebase user.
+ * The Cloudinary API secret is never sent to the browser.
  */
-export async function uploadBlobToFirebaseStorage(
+export async function uploadBlobToCloudinary(
   blob: Blob,
   storagePath: string,
-  contentType: string,
+  _contentType: string,
   onProgress: (percent: number) => void
 ): Promise<{ url: string; storagePath: string }> {
-  const storageAvailable = await isFirebaseStorageAvailable();
-  if (storageAvailable) {
-    try {
-      return await tryUploadToFirebaseStorage(blob, storagePath, contentType, onProgress);
-    } catch {
-      cachedFirebaseStorageAvailable = false;
-    }
-  }
-
   const parts = storagePath.split('/');
   const yearCode = parts[1] || '12C3';
-  const mediaCategoryRaw = parts[2] || 'image';
+  const rawCategory = parts[2] || 'image';
   const mediaCategory: 'image' | 'video' | 'thumbnail' =
-    mediaCategoryRaw === 'video' || mediaCategoryRaw === 'thumbnail' ? mediaCategoryRaw : 'image';
-  const fileName = parts.slice(3).join('_') || `upload-${Date.now()}`;
+    rawCategory === 'video' || rawCategory === 'thumbnail' ? rawCategory : 'image';
+  const fileName = parts.slice(3).join('_') || ('upload-' + Date.now());
+
+  const maxBytes = getMaxMediaUploadBytes(mediaCategory === 'video' ? 'video' : 'image');
+  if (blob.size > maxBytes) {
+    const maxLabel = mediaCategory === 'video' ? '100 MB' : '10 MB';
+    throw new Error('Tệp vượt quá giới hạn ' + maxLabel + '/tệp của Cloudinary.');
+  }
+
+  onProgress(2);
+  const signed = await requestCloudinaryUploadSignature(yearCode, mediaCategory, fileName);
   onProgress(5);
-  return await uploadBlobToAppServer(blob, yearCode, mediaCategory, fileName, contentType, onProgress);
+  return uploadDirectlyToCloudinary(signed, blob, fileName, onProgress);
 }
+
+// Backwards-compatible export while the existing upload UI uses this function name.
+export const uploadBlobToFirebaseStorage = uploadBlobToCloudinary;
