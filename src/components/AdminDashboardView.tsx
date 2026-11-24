@@ -562,7 +562,7 @@ export const AdminDashboardView: React.FC = () => {
                 Chọn nhiều tệp hình ảnh hoặc video từ máy tính / điện thoại
               </span>
               <span className="mt-1 text-xs text-[#57534E]">
-                Hỗ trợ JPG, PNG, WebP, MP4, MOV (tối đa 1GB/tệp · tự động chia nhỏ khi tải lên) · Tách biệt tự động giữa Ảnh và Video
+                Hỗ trợ JPG, PNG, WebP (tối đa 10 MB) và MP4, MOV (tối đa 100 MB) · Tách biệt tự động giữa Ảnh và Video
               </span>
               <input
                 type="file"
