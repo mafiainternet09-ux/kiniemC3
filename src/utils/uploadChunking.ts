@@ -1,5 +1,11 @@
-export const UPLOAD_CHUNK_BYTES = 4 * 1024 * 1024; // 4 MB per HTTP chunk (well under Cloud Run's 32 MB request limit)
-export const MAX_MEDIA_UPLOAD_BYTES = 1024 * 1024 * 1024; // 1 GB per file
+export const UPLOAD_CHUNK_BYTES = 4 * 1024 * 1024; // Retained for compatibility with chunk-planning helpers
+export const MAX_IMAGE_UPLOAD_BYTES = 10 * 1000 * 1000; // Cloudinary Free image upload limit: 10 MB
+export const MAX_VIDEO_UPLOAD_BYTES = 100 * 1000 * 1000; // Cloudinary Free video upload limit: 100 MB
+export const MAX_MEDIA_UPLOAD_BYTES = MAX_VIDEO_UPLOAD_BYTES;
+
+export function getMaxMediaUploadBytes(mediaType: 'image' | 'video'): number {
+  return mediaType === 'video' ? MAX_VIDEO_UPLOAD_BYTES : MAX_IMAGE_UPLOAD_BYTES;
+}
 
 export interface ChunkPlanItem {
   chunkIndex: number;

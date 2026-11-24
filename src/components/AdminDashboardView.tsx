@@ -24,7 +24,7 @@ import {
   stripImageExifGps,
   uploadBlobToFirebaseStorage,
 } from '../lib/mediaProcessing';
-import { MAX_MEDIA_UPLOAD_BYTES } from '../utils/uploadChunking';
+import { getMaxMediaUploadBytes } from '../utils/uploadChunking';
 import type { MediaItem, MediaType, YearCode, YearEvent } from '../types/memory';
 import { formatDateDDMMYYYY, formatDuration, sanitizeFirestoreId } from '../utils/memorySearch';
 import { ArchivalMediaFrame } from './ArchivalMediaFrame';
@@ -224,7 +224,7 @@ export const AdminDashboardView: React.FC = () => {
     const items: UploadQueueItem[] = Array.from(files).map((file) => {
       const mediaType = detectMediaType(file);
       const baseTitle = file.name.replace(/\.[^/.]+$/, '').replace(/[_-]+/g, ' ');
-      const isTooLarge = file.size > MAX_MEDIA_UPLOAD_BYTES;
+      const isTooLarge = file.size > getMaxMediaUploadBytes(mediaType);
       return {
         localId: `q-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
         file,
@@ -239,7 +239,7 @@ export const AdminDashboardView: React.FC = () => {
         progress: 0,
         status: isTooLarge ? 'error' : 'queued',
         errorMsg: isTooLarge
-          ? `Tệp nặng ${formatFileSize(file.size)}, vượt quá giới hạn tối đa 1GB/tệp.`
+          ? `Tệp nặng ${formatFileSize(file.size)}, vượt quá giới hạn ${mediaType === 'video' ? '100 MB' : '10 MB'}/tệp.`
           : undefined,
       };
     });
@@ -520,7 +520,7 @@ export const AdminDashboardView: React.FC = () => {
                   Tải lên nhiều ảnh &amp; video cùng lúc
                 </h2>
                 <p className="mt-1 text-xs text-[#57534E]">
-                  Ảnh được tự động xóa metadata vị trí GPS; video được trích xuất thumbnail và thời lượng (tự động chuyển sang kho máy chủ nếu Storage chưa kích hoạt).
+                  Ảnh được tự động xóa metadata vị trí GPS; video được trích xuất thumbnail và thời lượng; ảnh và video được lưu an toàn trên Cloudinary.
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
@@ -562,7 +562,7 @@ export const AdminDashboardView: React.FC = () => {
                 Chọn nhiều tệp hình ảnh hoặc video từ máy tính / điện thoại
               </span>
               <span className="mt-1 text-xs text-[#57534E]">
-                Hỗ trợ JPG, PNG, WebP, MP4, MOV (tối đa 1GB/tệp · tự động chia nhỏ khi tải lên) · Tách biệt tự động giữa Ảnh và Video
+                Hỗ trợ JPG, PNG, WebP (tối đa 10 MB) và MP4, MOV (tối đa 100 MB) · Tách biệt tự động giữa Ảnh và Video
               </span>
               <input
                 type="file"
